@@ -26,6 +26,11 @@ cat > /tmp/cwconfig.json <<"EOL"
 		"run_as_user": "root"
 	},
 	"metrics": {
+		"aggregation_dimensions": [
+			[
+				"InstanceId"
+			]
+		],
 		"append_dimensions": {
 			"AutoScalingGroupName": "${aws:AutoScalingGroupName}",
 			"ImageId": "${aws:ImageId}",
