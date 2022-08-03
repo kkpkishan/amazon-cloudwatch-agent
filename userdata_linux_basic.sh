@@ -39,7 +39,7 @@ cat > /tmp/cwconfig.json <<"EOL"
 				],
 				"metrics_collection_interval": 60,
 				"resources": [
-					"*"
+					"/"
 				]
 			},
 			"mem": {
