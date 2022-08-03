@@ -1,0 +1,365 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Automatically Create Alarms for EC2 instances
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'Alarms Parameters'
+      Parameters:
+      - ParentAlertStack
+    - Label:
+        default: 'Other Parameters'
+      Parameters:
+      - Memory
+      - EventState
+Parameters:
+  ParentAlertStack:
+    Description: 'Optional but recommended stack name of parent alert stack based on alert.yaml template.'
+    Type: String
+    Default: ''
+  Memory:
+    Description: Memory to allocate to Lambda function
+    Type: Number
+    Default:  128
+    MinValue: 128
+    MaxValue: 3008
+  EventState:
+    Description: Whether Cloudwatch event schedule is enabled or disabled
+    Type: String
+    Default: ENABLED
+
+Conditions:
+  ConfigureAlarmNotifications: !Not [!Equals [!Ref ParentAlertStack, '']]
+
+Resources:
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "CloudWatchAutoAlarms"
+      Handler: cw_auto_alarms.lambda_handler
+      Runtime: python3.8
+      Role:  !GetAtt CloudWatchAutoAlarmLambdaRole.Arn
+      MemorySize: !Ref Memory
+      Timeout: 600
+      Code:
+        ZipFile: |
+          import logging
+          from actions import check_alarm_tag, process_alarm_tags, delete_alarms, process_lambda_alarms, scan_and_process_alarm_tags
+          from os import getenv
+          
+          logger = logging.getLogger()
+          
+          create_alarm_tag = getenv("ALARM_TAG", "Create_Auto_Alarms")
+          
+          cw_namespace = getenv("CLOUDWATCH_NAMESPACE", "CWAgent")
+          
+          create_default_alarms_flag = getenv("CREATE_DEFAULT_ALARMS", "true").lower()
+          
+          append_dimensions = getenv("CLOUDWATCH_APPEND_DIMENSIONS", 'InstanceId, ImageId, InstanceType')
+          append_dimensions = [dimension.strip() for dimension in append_dimensions.split(',')]
+          
+          alarm_cpu_high_default_threshold = getenv("ALARM_CPU_HIGH_THRESHOLD", "75")
+          alarm_credit_balance_low_default_threshold = getenv("ALARM_CPU_CREDIT_BALANCE_LOW_THRESHOLD", "100")
+          alarm_memory_high_default_threshold = getenv("ALARM_MEMORY_HIGH_THRESHOLD", "75")
+          alarm_disk_space_percent_free_threshold = getenv("ALARM_DISK_PERCENT_LOW_THRESHOLD", "20")
+          alarm_disk_used_percent_threshold = 100 - int(alarm_disk_space_percent_free_threshold)
+          
+          alarm_lambda_error_threshold = getenv("ALARM_LAMBDA_ERROR_THRESHOLD", "1")
+          alarm_lambda_throttles_threshold = getenv("ALARM_LAMBDA_THROTTLE_THRESHOLD", "1")
+          alarm_lambda_dead_letter_error_threshold = getenv("ALARM_LAMBDA_DEAD_LETTER_ERROR_THRESHOLD", "1")
+          alarm_lambda_destination_delivery_failure_threshold = getenv("ALARM_LAMBDA_DESTINATION_DELIVERY_FAILURE_THRESHOLD", "1")
+          
+          sns_topic_arn = getenv("DEFAULT_ALARM_SNS_TOPIC_ARN", None)
+          
+          alarm_separator = '-'
+          alarm_identifier = 'AutoAlarm'
+          # For Redhat, the default device is xvda2, xfs, for Ubuntu, the default fstype is ext4,
+          # for Amazon Linux, the default device is xvda1, xfs
+          default_alarms = {
+             'AWS/EC2': [
+                 {
+                     'Key': alarm_separator.join(
+                         [alarm_identifier, 'AWS/EC2', 'CPUUtilization', 'GreaterThanThreshold', '5m', 'Average']),
+                     'Value': alarm_cpu_high_default_threshold
+                 },
+                 {
+                     'Key': alarm_separator.join(
+                         [alarm_identifier, 'AWS/EC2', 'CPUCreditBalance', 'LessThanThreshold', '5m', 'Average']),
+                     'Value': alarm_credit_balance_low_default_threshold
+                 }
+             ],
+             'AWS/Lambda': [
+                 {
+                     'Key': alarm_separator.join(
+                         [alarm_identifier, 'AWS/Lambda', 'Errors', 'GreaterThanThreshold', '5m', 'Average']),
+                     'Value': alarm_lambda_error_threshold
+                 },
+                 {
+                     'Key': alarm_separator.join(
+                         [alarm_identifier, 'AWS/Lambda', 'Throttles', 'GreaterThanThreshold', '5m', 'Average']),
+                     'Value': alarm_lambda_throttles_threshold
+                 }
+             ],
+             cw_namespace: {
+                 'Windows': [
+          
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'LogicalDisk % Free Space', 'objectname', 'LogicalDisk',
+                              'instance', 'C:', 'LessThanThreshold', '5m', 'Average']),
+                         'Value': alarm_disk_space_percent_free_threshold
+                     },
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'Memory % Committed Bytes In Use', 'objectname', 'Memory',
+                              'instance', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_memory_high_default_threshold
+                     }
+                 ],
+                 'Amazon Linux': [
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'disk_used_percent', 'device', 'xvda1', 'fstype', 'xfs', 'path',
+                              '/', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_disk_used_percent_threshold
+                     },
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'mem_used_percent', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_memory_high_default_threshold
+                     }
+                 ],
+                 'Red Hat': [
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'disk_used_percent', 'device', 'xvda2', 'fstype', 'xfs', 'path',
+                              '/', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_disk_used_percent_threshold
+                     },
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'mem_used_percent', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_memory_high_default_threshold
+                     }
+                 ],
+                 'Ubuntu': [
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'disk_used_percent', 'device', 'xvda1', 'fstype', 'ext4', 'path',
+                              '/', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_disk_used_percent_threshold
+                     },
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'mem_used_percent', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_memory_high_default_threshold
+                     }
+                 ],
+                 'SUSE': [
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'disk_used_percent', 'device', 'xvda1', 'fstype', 'xfs', 'path',
+                              '/', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_disk_used_percent_threshold
+                     },
+                     {
+                         'Key': alarm_separator.join(
+                             [alarm_identifier, cw_namespace, 'mem_used_percent', 'GreaterThanThreshold', '5m', 'Average']),
+                         'Value': alarm_memory_high_default_threshold
+                     }
+                 ]
+             }
+          }
+          
+          metric_dimensions_map = {
+             cw_namespace: append_dimensions,
+             'AWS/EC2': ['InstanceId']
+          }
+          
+          
+          def lambda_handler(event, context):
+             logger.info('event received: {}'.format(event))
+             try:
+                 if 'source' in event and event['source'] == 'aws.ec2' and event['detail']['state'] == 'running':
+                     instance_id = event['detail']['instance-id']
+                     # determine if instance is tagged to create an alarm
+                     instance_info = check_alarm_tag(instance_id, create_alarm_tag)
+          
+                     # instance has been tagged for alarming, confirm an alarm doesn't already exist
+                     if instance_info:
+                         process_alarm_tags(instance_id, instance_info, default_alarms, metric_dimensions_map, sns_topic_arn,
+                                            cw_namespace, create_default_alarms_flag, alarm_separator)
+                 elif 'source' in event and event['source'] == 'aws.ec2' and event['detail']['state'] == 'terminated':
+                     instance_id = event['detail']['instance-id']
+                     result = delete_alarms(instance_id)
+                 elif 'source' in event and event['source'] == 'aws.lambda' and event['detail'][
+                     'eventName'] == 'TagResource20170331v2':
+                     logger.debug(
+                         'Tag Lambda Function event occurred, tags are: {}'.format(event['detail']['requestParameters']['tags']))
+                     tags = event['detail']['requestParameters']['tags']
+                     function = event['detail']['requestParameters']['resource'].split(":")[-1]
+                     process_lambda_alarms(function, tags, create_alarm_tag, default_alarms, sns_topic_arn, alarm_separator)
+                 elif 'source' in event and event['source'] == 'aws.lambda' and event['detail'][
+                     'eventName'] == 'DeleteFunction20150331':
+                     function = event['detail']['requestParameters']['functionName']
+                     logger.debug('Delete Lambda Function event occurred for: {}'.format(function))
+                     result = delete_alarms(function)
+                 elif  'action' in event and event['action'] == 'scan':
+                     logger.debug(
+                         f'Scanning for EC2 instances with tag: {create_alarm_tag} to create alarm'
+                     )
+                     scan_and_process_alarm_tags(create_alarm_tag, default_alarms, metric_dimensions_map, sns_topic_arn,
+                                            cw_namespace, create_default_alarms_flag, alarm_separator)
+          
+             except Exception as e:
+                 # If any other exceptions which we didn't expect are raised
+                 # then fail the job and log the exception message.
+                 logger.error('Failure creating alarm: {}'.format(e))
+                 raise
+
+      Environment:
+        Variables:
+          ALARM_TAG: Create_Auto_Alarms
+          CREATE_DEFAULT_ALARMS: true
+          CLOUDWATCH_NAMESPACE: CWAgent
+          ALARM_CPU_HIGH_THRESHOLD: 75
+          ALARM_CPU_CREDIT_BALANCE_LOW_THRESHOLD: 100
+          ALARM_MEMORY_HIGH_THRESHOLD: 75
+          ALARM_DISK_PERCENT_LOW_THRESHOLD: 20
+          CLOUDWATCH_APPEND_DIMENSIONS: 'InstanceId, ImageId, InstanceType'
+
+          ALARM_LAMBDA_ERROR_THRESHOLD: 0
+          ALARM_LAMBDA_THROTTLE_THRESHOLD: 0
+
+          DEFAULT_ALARM_SNS_TOPIC_ARN: {'Fn::ImportValue': !Sub '${ParentAlertStack}-TopicARN'}
+
+  CloudWatchAutoAlarmLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: "Lambda_Permissions"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:log-stream:*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeImages
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:PutMetricAlarm
+                Resource:  !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:AutoAlarm-*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                Resource: "*"
+
+  LambdaInvokePermissionCloudwatchEventsEC2:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - LambdaFunction
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt
+        - CloudWatchAutoAlarmCloudwatchEventEC2
+        - Arn
+
+  CloudWatchAutoAlarmCloudwatchEventEC2:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: Initiate-CloudWatchAutoAlarmsEC2
+      Description: Creates CloudWatch alarms on instance start via Lambda CloudWatchAutoAlarms and deletes them on instance termination.
+      EventPattern: '
+        {
+          "source": [
+            "aws.ec2"
+          ],
+          "detail-type": [
+            "EC2 Instance State-change Notification"
+          ],
+          "detail": {
+            "state": [
+              "running",
+              "terminated"
+            ]
+          }
+        }'
+      State: !Ref EventState
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: LATEST
+
+  CloudWatchAutoAlarmCloudwatchEventLambda:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: Initiate-CloudWatchAutoAlarmsLambda
+      Description: Creates CloudWatch alarms on for lambda functions with the CloudWatchAutoAlarms activation tag
+      EventPattern: '
+        {
+          "source": [
+            "aws.lambda"
+          ],
+          "detail-type": [
+            "AWS API Call via CloudTrail"
+          ],
+          "detail": {
+            "eventSource": [
+              "lambda.amazonaws.com"
+            ],
+            "eventName": [
+              "TagResource20170331v2",
+              "DeleteFunction20150331"
+            ]
+          }
+        }
+        '
+      State: !Ref EventState
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: LATEST
+
+  LambdaInvokePermissionCloudwatchEventsLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt
+        - LambdaFunction
+        - Arn
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt
+        - CloudWatchAutoAlarmCloudwatchEventLambda
+        - Arn
