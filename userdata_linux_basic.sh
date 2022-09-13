@@ -1,16 +1,30 @@
 #!/usr/bin/env bash
 # comment out the appropriate linux version for install
 
-# Amazon Linux
+# Amazon Linux x86-64
 wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm -O /tmp/cwagent.rpm
-# Redhat
+# Amazon Linux ARM64
+# wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/arm64/latest/amazon-cloudwatch-agent.rpm -O /tmp/cwagent.rpm
+
+# Redhat x86-64
 # curl -o /tmp/cwagent.rpm https://s3.amazonaws.com/amazoncloudwatch-agent/redhat/amd64/latest/amazon-cloudwatch-agent.rpm
-# SUSE
+# Redhat ARM64
+# curl -o /tmp/cwagent.rpm https://s3.amazonaws.com/amazoncloudwatch-agent/redhat/arm64/latest/amazon-cloudwatch-agent.rpm
+
+# SUSE x86-64
 # wget https://s3.amazonaws.com/amazoncloudwatch-agent/suse/amd64/latest/amazon-cloudwatch-agent.rpm -O /tmp/cwagent.rpm
-# Debian
+# SUSE ARM64
+# wget https://s3.amazonaws.com/amazoncloudwatch-agent/suse/arm64/latest/amazon-cloudwatch-agent.rpm -O /tmp/cwagent.rpm
+
+# Debian x86-64
 # wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/amd64/latest/amazon-cloudwatch-agent.deb -O /tmp/cwagent.deb
-# Ubuntu
+# Debian ARM64
+# wget https://s3.amazonaws.com/amazoncloudwatch-agent/debian/arm64/latest/amazon-cloudwatch-agent.deb -O /tmp/cwagent.deb
+
+# Ubuntu x86-64
 # curl -o /tmp/cwagent.deb https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+# Ubuntu ARM64
+# curl -o /tmp/cwagent.deb https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/arm64/latest/amazon-cloudwatch-agent.deb
 
 # For RPM install, uncoment next line
 rpm -U /tmp/cwagent.rpm
