@@ -1,0 +1,49 @@
+{
+	"agent": {
+		"metrics_collection_interval": 60,
+		"run_as_user": "root"
+	},
+	"metrics": {
+		"aggregation_dimensions": [
+			[
+				"InstanceId"
+			]
+		],
+		"append_dimensions": {
+			"AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+			"ImageId": "${aws:ImageId}",
+			"InstanceId": "${aws:InstanceId}",
+			"InstanceType": "${aws:InstanceType}"
+		},
+		"metrics_collected": {
+			"disk": {
+				"measurement": [
+					"used_percent"
+				],
+				"metrics_collection_interval": 60,
+				"resources": [
+					"/"
+				]
+			},
+			"mem": {
+				"measurement": [
+					"mem_used_percent"
+				],
+				"metrics_collection_interval": 60
+			},
+			"nvidia_gpu": {
+				"measurement": [
+					"utilization_gpu",
+					"utilization_memory",
+					"memory_total",
+					"memory_used",
+					"memory_free",
+					"clocks_current_graphics",
+					"clocks_current_sm",
+					"clocks_current_memory"
+				],
+				"metrics_collection_interval": 60
+			}
+		}
+	}
+}
