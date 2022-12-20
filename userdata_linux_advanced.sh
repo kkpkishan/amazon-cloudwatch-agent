@@ -30,7 +30,7 @@ wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/a
 rpm -U /tmp/cwagent.rpm
 
 # For Debian package install, uncoment next line
-# dpkg -i -E ./cwagent.deb
+# dpkg -i -E /tmp/cwagent.deb
 
 
 cat > /tmp/cwconfig.json <<"EOL"
