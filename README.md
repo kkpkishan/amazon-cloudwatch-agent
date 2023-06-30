@@ -1,7 +1,3 @@
-Certainly! Here's an updated `README.md` file that includes the provided information for each file:
-
----
-
 # Amazon CloudWatch Agent
 
 This repository contains files related to the Amazon CloudWatch Agent and its associated functionality. Below is a list of the files available in this repository:
