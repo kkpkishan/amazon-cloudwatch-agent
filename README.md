@@ -45,9 +45,6 @@ This script provides an example of user data for standard Linux instances. It in
 
 To get started, make sure you have the necessary permissions and dependencies in place to utilize the files provided. It's recommended to review the documentation and instructions associated with each file for a better understanding of their purpose and how to use them effectively.
 
-## Contributing
-
-Contributions to this repository are welcome! If you would like to contribute, please follow the guidelines outlined in the `CONTRIBUTING.md` file. By contributing, you agree to abide by the code of conduct specified in the `CODE_OF_CONDUCT.md` file.
 
 ## License
 
